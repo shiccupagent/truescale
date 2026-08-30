@@ -98,7 +98,22 @@
   #pageCanvas { display: block; background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,.6); }
   body.night #pageCanvas { filter: invert(0.92) hue-rotate(180deg); }
   #overlayCanvas { position: absolute; inset: 0; z-index: 1; }
-  #sheet.picking #overlayCanvas { cursor: crosshair; }
+  #sheet.picking #overlayCanvas { cursor: crosshair; touch-action: none; }
+
+  /* magnifier bubble while aiming a measurement point */
+  #loupe {
+    position: fixed;
+    width: 130px; height: 130px;
+    border-radius: 50%;
+    border: 3px solid var(--accent);
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 20;
+    display: none;
+    box-shadow: 0 6px 20px rgba(0,0,0,.5);
+    background: #fff;
+  }
+  #loupeCanvas { display: block; }
 
   #empty {
     position: absolute;
@@ -127,10 +142,10 @@
   #vrulerCanvas { display: block; cursor: grab; border-radius: 3px; }
   #vrulerRotate {
     position: absolute;
-    right: -44px;
+    right: -54px;
     top: 50%;
-    width: 36px; height: 36px;
-    margin-top: -18px;
+    width: 44px; height: 44px;
+    margin-top: -22px;
     border-radius: 50%;
     background: var(--accent);
     color: #06121f;
@@ -249,6 +264,8 @@
   </div>
 </div>
 
+<div id="loupe"><canvas id="loupeCanvas"></canvas></div>
+
 <div id="calModal" class="modal">
   <div class="card">
     <h2>Screen calibration</h2>
@@ -290,11 +307,12 @@
     <h2>How to use TrueScale</h2>
     <p><b>True scale:</b> calibrate once (Calibrate &rarr; match the bar to a real ruler or bank card). After that, 1&Prime; on the drawing = 1&Prime; on the glass in 1:1 mode &mdash; hold a real scale right against the screen.</p>
     <p><b>Measuring tools</b> (readouts in inches, thou, and mm):<br>
-      &#8596; <b>Distance</b> &mdash; tap two points.<br>
-      &#8736; <b>Angle</b> &mdash; tap one end, then the corner, then the other end.<br>
-      &#9711; <b>Circle</b> &mdash; tap three points anywhere on a circle or arc; you get radius and diameter.<br>
-      <b>Undo</b> removes the last measurement; <b>Clear</b> wipes them all.</p>
-    <p><b>&#128207; Ruler:</b> drag it to move. Spin it with the round &#10227; handle on its right end (drag = free spin, snaps at 45&deg;; a quick tap steps 45&deg;). The <b>16ths / .001&Prime;</b> button switches its inch edge between fractions and decimal &mdash; in 2:1 view the decimal edge shows true 10-thou ticks.</p>
+      Press the drawing and a <b>magnifier bubble</b> appears &mdash; drag to aim exactly, lift your finger to place the point. Two fingers pans the page while a tool is active.<br>
+      &#8596; <b>Distance</b> &mdash; two points.<br>
+      &#8736; <b>Angle</b> &mdash; one end, then the corner, then the other end.<br>
+      &#9711; <b>Circle</b> &mdash; three points anywhere on a circle or arc; you get radius and diameter.<br>
+      <b>Undo</b> removes the last point or measurement; <b>Clear</b> wipes them all.</p>
+    <p><b>&#128207; Ruler:</b> one finger moves it; <b>two fingers twist it</b> like a real ruler (snaps at 45&deg;). The round &#10227; handle also spins it &mdash; a quick tap on it steps 45&deg;. The <b>16ths / .001&Prime;</b> button switches its inch edge between fractions and decimal &mdash; in 2:1 view the decimal edge shows true 10-thou ticks.</p>
     <p><b>Drawing scale:</b> if the sheet is marked e.g. SCALE 1:2, set it here and every readout converts to real part size. Angles never change.</p>
     <p><b>Offline:</b> every PDF you open is stored on this device and reopens by itself at your last page &mdash; no internet needed. In Chrome, use menu &rarr; <i>Add to Home screen</i> to install it like an app.</p>
     <div class="calRow"><span class="spacer"></span><button id="helpClose" class="primary">Got it</button></div>
@@ -547,9 +565,9 @@ $('dscaleSel').addEventListener('change', () => {
 
 // ---------- measuring tools ----------
 const TOOL_HINTS = {
-  dist: 'Distance: tap two points on the drawing.',
-  angle: 'Angle: tap one end, then the corner (vertex), then the other end.',
-  circle: 'Circle: tap three points on the edge of the circle or arc.',
+  dist: 'Distance: press &amp; drag to aim with the magnifier, lift to place — two points. Two fingers pans.',
+  angle: 'Angle: place one end, then the corner (vertex), then the other end. Two fingers pans.',
+  circle: 'Circle: place three points on the edge of the circle or arc. Two fingers pans.',
 };
 for (const btn of document.querySelectorAll('.tool')) {
   btn.addEventListener('click', () => {
@@ -558,7 +576,7 @@ for (const btn of document.querySelectorAll('.tool')) {
     for (const b of document.querySelectorAll('.tool')) b.classList.toggle('toggled', b === btn);
     $('sheet').classList.toggle('picking', tool !== 'pan');
     drawOverlay();
-    if (tool !== 'pan') setStatus(TOOL_HINTS[tool]);
+    if (tool !== 'pan') $('status').innerHTML = TOOL_HINTS[tool];
   });
 }
 $('clearBtn').addEventListener('click', () => { picks = []; shapes = []; drawOverlay(); });
@@ -627,13 +645,89 @@ function angleAt(a, v, b) {
   return Math.acos(Math.min(1, Math.max(-1, dot))) * 180 / Math.PI;
 }
 
-$('overlayCanvas').addEventListener('click', e => {
+// Point placement is press → aim (magnified loupe follows the finger, since a
+// fingertip hides the exact spot) → lift to place. A second finger cancels the
+// aim and pans instead, so navigation still works while a tool is active.
+const LOUPE = 130, LOUPE_ZOOM = 2;
+function showLoupe(clientX, clientY, cssX, cssY) {
+  const lp = $('loupe'), lc = $('loupeCanvas'), d = dpr();
+  if (lc.width !== Math.round(LOUPE * d)) {
+    lc.width = Math.round(LOUPE * d);
+    lc.height = Math.round(LOUPE * d);
+    lc.style.width = LOUPE + 'px';
+    lc.style.height = LOUPE + 'px';
+  }
+  const ctx = lc.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, lc.width, lc.height);
+  const src = LOUPE / LOUPE_ZOOM * d;
+  const sx = cssX * d - src / 2, sy = cssY * d - src / 2;
+  ctx.drawImage($('pageCanvas'), sx, sy, src, src, 0, 0, lc.width, lc.height);
+  ctx.drawImage($('overlayCanvas'), sx, sy, src, src, 0, 0, lc.width, lc.height);
+  ctx.strokeStyle = '#1e90ff';
+  ctx.lineWidth = 1.5 * d;
+  ctx.beginPath();
+  ctx.moveTo(lc.width / 2, 0); ctx.lineTo(lc.width / 2, lc.height);
+  ctx.moveTo(0, lc.height / 2); ctx.lineTo(lc.width, lc.height / 2);
+  ctx.stroke();
+  lp.style.display = 'block';
+  lp.style.left = Math.min(Math.max(8, clientX - LOUPE / 2), window.innerWidth - LOUPE - 8) + 'px';
+  lp.style.top = (clientY - LOUPE - 46 < 8 ? clientY + 46 : clientY - LOUPE - 46) + 'px';
+}
+function hideLoupe() { $('loupe').style.display = 'none'; }
+
+const aim = { pts: new Map(), active: false, x: 0, y: 0, panLast: null };
+const ov = $('overlayCanvas');
+function aimMid() {
+  const a = [...aim.pts.values()];
+  return { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2 };
+}
+function updateAim(e) {
+  const r = ov.getBoundingClientRect();
+  aim.x = Math.min(Math.max(0, e.clientX - r.left), r.width);
+  aim.y = Math.min(Math.max(0, e.clientY - r.top), r.height);
+  showLoupe(e.clientX, e.clientY, aim.x, aim.y);
+}
+ov.addEventListener('pointerdown', e => {
   if (tool === 'pan') return;
-  const r = $('overlayCanvas').getBoundingClientRect();
-  picks.push({ x: (e.clientX - r.left) / cssPerPoint, y: (e.clientY - r.top) / cssPerPoint });
-  finishShape();
-  drawOverlay();
+  e.preventDefault();
+  try { ov.setPointerCapture(e.pointerId); } catch (err) {}
+  aim.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (aim.pts.size === 1) {
+    aim.active = true;
+    updateAim(e);
+  } else {
+    aim.active = false;
+    hideLoupe();
+    aim.panLast = aimMid();
+  }
 });
+ov.addEventListener('pointermove', e => {
+  if (!aim.pts.has(e.pointerId)) return;
+  aim.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (aim.pts.size >= 2) {
+    const m = aimMid();
+    const sc = $('scroller');
+    sc.scrollLeft -= m.x - aim.panLast.x;
+    sc.scrollTop -= m.y - aim.panLast.y;
+    aim.panLast = m;
+  } else if (aim.active) {
+    updateAim(e);
+  }
+});
+function aimEnd(e) {
+  if (!aim.pts.has(e.pointerId)) return;
+  if (aim.pts.size === 1 && aim.active && e.type === 'pointerup') {
+    picks.push({ x: aim.x / cssPerPoint, y: aim.y / cssPerPoint });
+    finishShape();
+    drawOverlay();
+  }
+  aim.pts.delete(e.pointerId);
+  if (aim.pts.size < 2) aim.panLast = null;
+  if (aim.pts.size === 0) { aim.active = false; hideLoupe(); }
+}
+ov.addEventListener('pointerup', aimEnd);
+ov.addEventListener('pointercancel', aimEnd);
 
 // ---------- overlay drawing ----------
 function refreshShapeLabels() { /* labels are computed at draw time from live scale */ }
@@ -792,7 +886,7 @@ function drawRulerFace() {
   ctx.fillText(rulerEdge === 'frac' ? 'in (16ths)' : 'in (decimal · thou)', 4, 44);
   ctx.fillText('cm', 4, h - 36);
   ctx.textAlign = 'center';
-  ctx.fillText('drag to move · spin with the ⟳ handle', w / 2, h / 2 + 4);
+  ctx.fillText('one finger moves · two fingers twist · ⟳ tap = 45°', w / 2, h / 2 + 4);
   ctx.textAlign = 'left';
   ctx.restore();
 }
@@ -808,7 +902,7 @@ $('rulerBtn').addEventListener('click', () => {
     rl.y = sc.scrollTop + 80;
     drawRulerFace();
     applyRulerTransform();
-    setStatus('Ruler: drag to move, drag the round handle to rotate (snaps at 45°). It reads drawing inches — identical to a real ruler on the glass in 1:1 mode.');
+    setStatus('Ruler: one finger moves it, two fingers twist it (snaps at 45°); tapping the ⟳ handle steps 45°. It reads drawing inches — identical to a real ruler on the glass in 1:1 mode.');
   }
 });
 
@@ -829,20 +923,56 @@ function rulerCenter() {
 }
 (function wireRulerDrag() {
   const cv = $('vrulerCanvas'), knob = $('vrulerRotate');
-  let start = null;
+  // one finger drags the ruler; two fingers on it drag AND twist it, like a
+  // real ruler under two fingertips
+  const rpts = new Map();
+  let rbase = null;
+  const snapDeg = () => {
+    const s = Math.round(rl.deg / 45) * 45;
+    if (Math.abs(rl.deg - s) < 2.5) { rl.deg = s; applyRulerTransform(); }
+  };
+  function rSnapshot() {
+    const a = [...rpts.values()];
+    if (!a.length) { rbase = null; return; }
+    rbase = { x: rl.x, y: rl.y, deg: rl.deg, two: a.length >= 2 };
+    if (rbase.two) {
+      rbase.mid = { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2 };
+      rbase.ang = Math.atan2(a[1].y - a[0].y, a[1].x - a[0].x) * 180 / Math.PI;
+    } else {
+      rbase.p = { x: a[0].x, y: a[0].y };
+    }
+  }
   cv.addEventListener('pointerdown', e => {
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch (err) {}
-    start = { px: e.clientX, py: e.clientY, x: rl.x, y: rl.y };
+    rpts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    rSnapshot();
   });
   cv.addEventListener('pointermove', e => {
-    if (!start) return;
-    rl.x = start.x + (e.clientX - start.px);
-    rl.y = start.y + (e.clientY - start.py);
+    if (!rpts.has(e.pointerId) || !rbase) return;
+    rpts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const a = [...rpts.values()];
+    if (rbase.two && a.length >= 2) {
+      const mid = { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2 };
+      const ang = Math.atan2(a[1].y - a[0].y, a[1].x - a[0].x) * 180 / Math.PI;
+      rl.deg = rbase.deg + (ang - rbase.ang);
+      rl.x = rbase.x + (mid.x - rbase.mid.x);
+      rl.y = rbase.y + (mid.y - rbase.mid.y);
+    } else if (!rbase.two && a.length === 1) {
+      rl.x = rbase.x + (a[0].x - rbase.p.x);
+      rl.y = rbase.y + (a[0].y - rbase.p.y);
+    }
     applyRulerTransform();
   });
-  cv.addEventListener('pointerup', () => { start = null; });
-  cv.addEventListener('pointercancel', () => { start = null; });
+  const rEnd = e => {
+    if (!rpts.has(e.pointerId)) return;
+    const wasTwo = rbase && rbase.two;
+    rpts.delete(e.pointerId);
+    if (wasTwo) snapDeg();
+    rSnapshot();
+  };
+  cv.addEventListener('pointerup', rEnd);
+  cv.addEventListener('pointercancel', rEnd);
 
   let rotating = false, rotMoved = false, rotStart = null;
   knob.addEventListener('pointerdown', e => {

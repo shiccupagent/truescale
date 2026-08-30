@@ -1,5 +1,5 @@
 // TrueScale PDF — offline cache. Bump VERSION on any app change.
-const VERSION = 'truescale-v4';
+const VERSION = 'truescale-v5';
 const SHELL = [
   './',
   './index.html',
