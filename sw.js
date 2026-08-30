@@ -1,5 +1,5 @@
 // TrueScale PDF — offline cache. Bump VERSION on any app change.
-const VERSION = 'truescale-v2';
+const VERSION = 'truescale-v4';
 const SHELL = [
   './',
   './index.html',
@@ -28,9 +28,12 @@ self.addEventListener('fetch', e => {
   if (e.request.mode === 'navigate') {
     e.respondWith(
       fetch(e.request)
-        .then(res => {
-          const copy = res.clone();
-          caches.open(VERSION).then(c => c.put('./index.html', copy));
+        .then(async res => {
+          // Only a good response for the app page itself may refresh the
+          // cached shell — a 404 or captive-portal page must never clobber it.
+          const path = new URL(e.request.url).pathname;
+          const isShell = path.endsWith('/') || path.endsWith('/index.html');
+          if (res.ok && isShell) await caches.open(VERSION).then(c => c.put('./index.html', res.clone()));
           return res;
         })
         .catch(() => caches.match('./index.html'))
