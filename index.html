@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#101418">
+<title>TrueScale PDF</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #101418;
+    --panel: #1a2129;
+    --panel-2: #232c36;
+    --text: #e8edf2;
+    --dim: #93a1af;
+    --accent: #4da3ff;
+    --danger: #ff6b6b;
+    --ok: #51cf8e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    touch-action: pan-x pan-y;
+  }
+
+  /* ---------- toolbar ---------- */
+  #toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--panel);
+    border-bottom: 1px solid #000;
+    flex-wrap: wrap;
+    flex: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  button, select {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid #38434f;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    min-height: 40px;
+    touch-action: manipulation;
+  }
+  button:active { background: #2e3a46; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  button.toggled { background: var(--accent); border-color: var(--accent); color: #06121f; }
+  button:disabled { opacity: 0.4; }
+  #pageNum {
+    width: 56px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid #38434f;
+    border-radius: 8px;
+    padding: 8px 6px;
+    font-size: 14px;
+    text-align: center;
+    min-height: 40px;
+  }
+  .spacer { flex: 1; }
+  #status {
+    color: var(--dim);
+    font-size: 12px;
+    padding: 2px 8px 6px;
+    background: var(--panel);
+    flex: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #status b { color: var(--text); font-weight: 600; }
+
+  /* ---------- viewer ---------- */
+  #scroller {
+    flex: 1;
+    overflow: auto;
+    touch-action: pan-x pan-y;
+    background: #0a0d10;
+    position: relative;
+  }
+  #sheet {
+    position: relative;
+    margin: 24px;
+    width: max-content;
+    display: none;
+  }
+  #pageCanvas { display: block; background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,.6); }
+  #overlayCanvas { position: absolute; inset: 0; }
+  #sheet.measuring #overlayCanvas { cursor: crosshair; }
+
+  #empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: var(--dim);
+    text-align: center;
+    padding: 24px;
+  }
+  #empty h1 { font-size: 22px; color: var(--text); }
+  #empty p { max-width: 46ch; }
+
+  /* ---------- modal ---------- */
+  #calModal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.55);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    overflow: auto;
+    z-index: 10;
+    padding: 16px;
+  }
+  #calModal.open { display: flex; }
+  #calCard {
+    background: var(--panel);
+    border: 1px solid #38434f;
+    border-radius: 14px;
+    padding: 18px;
+    max-width: 640px;
+    width: 100%;
+    margin: auto 0;
+  }
+  #calCard h2 { font-size: 18px; margin-bottom: 6px; }
+  #calCard p { color: var(--dim); margin-bottom: 12px; }
+  .calRow { display: flex; align-items: center; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+  #ppiSlider { flex: 1; min-width: 160px; accent-color: var(--accent); }
+  #ppiVal { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 90px; }
+
+  /* calibration targets are sized in JS from current PPI */
+  #bar100 {
+    height: 34px;
+    background: repeating-linear-gradient(90deg, var(--accent) 0, var(--accent) 2px, #2b3642 2px, #2b3642 100%);
+    background-size: 10% 100%;
+    border: 2px solid var(--accent);
+    border-radius: 4px;
+    margin: 6px 0 2px;
+  }
+  #card {
+    border: 2px dashed var(--ok);
+    border-radius: 10px;
+    margin: 14px 0 2px;
+  }
+  .calLabel { font-size: 12px; color: var(--dim); }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button id="openBtn" class="primary">Open PDF</button>
+  <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
+  <button id="prevBtn" disabled>&#9664;</button>
+  <input id="pageNum" type="number" min="1" value="1" disabled>
+  <span id="pageCount" style="color:var(--dim)">/ –</span>
+  <button id="nextBtn" disabled>&#9654;</button>
+  <select id="modeSel" disabled>
+    <option value="1">1:1 true scale</option>
+    <option value="2">2:1 (halve ruler readings)</option>
+    <option value="fit">Fit width (not to scale)</option>
+  </select>
+  <button id="measureBtn" disabled>Measure</button>
+  <span class="spacer"></span>
+  <button id="calBtn">Calibrate</button>
+  <button id="fsBtn">&#x26F6;</button>
+</div>
+<div id="status">Open a PDF, then calibrate once with a real ruler or a bank card.</div>
+
+<div id="scroller">
+  <div id="empty">
+    <h1>TrueScale PDF</h1>
+    <p>Renders PDF pages at their real physical size so you can measure drawings on screen with an actual ruler.</p>
+    <p><b>First time?</b> Tap <b>Calibrate</b> and match the on-screen bar to a real ruler or bank card &mdash; that locks the app to this exact screen.</p>
+  </div>
+  <div id="sheet">
+    <canvas id="pageCanvas"></canvas>
+    <canvas id="overlayCanvas"></canvas>
+  </div>
+</div>
+
+<div id="calModal">
+  <div id="calCard">
+    <h2>Screen calibration</h2>
+    <p>Hold a real ruler (or a bank card) flat against the screen and adjust until the target matches exactly. You only do this once per device.</p>
+
+    <div class="calRow">
+      <input id="ppiSlider" type="range" min="150" max="450" step="0.5">
+      <span id="ppiVal"></span>
+      <button id="ppiMinus">&minus;</button>
+      <button id="ppiPlus">+</button>
+    </div>
+
+    <div id="bar100"></div>
+    <div class="calLabel">This bar must measure exactly <b>100&nbsp;mm</b> along a real ruler (each stripe = 10&nbsp;mm).</div>
+
+    <div id="card"></div>
+    <div class="calLabel">This outline must exactly match a bank / credit card (85.60 &times; 53.98&nbsp;mm).</div>
+
+    <div class="calRow" style="margin-top:16px">
+      <button id="presetPixelTab">Preset: Pixel Tablet</button>
+      <button id="presetReset">Reset guess</button>
+      <span class="spacer"></span>
+      <button id="calDone" class="primary">Done</button>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/pdf.min.js"></script>
+<script>
+'use strict';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
+
+const $ = id => document.getElementById(id);
+const dpr = () => window.devicePixelRatio || 1;
+
+// ---------- state ----------
+const LS_PPI = 'truescale.ppi';
+const LS_PAGE_PREFIX = 'truescale.page.';
+const PIXEL_TABLET_PPI = 276;              // 10.95" 2560x1600 panel
+let physPPI = parseFloat(localStorage.getItem(LS_PPI)) || 0;
+let pdfDoc = null;
+let pageNo = 1;
+let mode = '1';                            // '1' | '2' | 'fit'
+let docKey = '';
+let measuring = false;
+let measurePts = [];                       // up to 2 points, in CSS px relative to canvas
+let cssPerPoint = 1;                       // CSS px per PDF point at current render
+let rendering = false, renderQueued = false;
+
+function defaultPPI() {
+  // Sensible guess before calibration: assume the CSS "96 px/in" nominal is right.
+  return 96 * dpr();
+}
+if (!physPPI) physPPI = defaultPPI();
+
+// ---------- rendering ----------
+async function render() {
+  if (!pdfDoc) return;
+  if (rendering) { renderQueued = true; return; }
+  rendering = true;
+  try {
+    const page = await pdfDoc.getPage(pageNo);
+    const base = page.getViewport({ scale: 1 });
+    const cssPPI = physPPI / dpr();
+    if (mode === 'fit') {
+      const avail = $('scroller').clientWidth - 48;
+      cssPerPoint = avail / base.width;
+    } else {
+      cssPerPoint = (cssPPI / 72) * parseFloat(mode);
+    }
+    const vp = page.getViewport({ scale: cssPerPoint * dpr() });
+    const canvas = $('pageCanvas'), overlay = $('overlayCanvas');
+    canvas.width = Math.round(vp.width);
+    canvas.height = Math.round(vp.height);
+    const cssW = vp.width / dpr(), cssH = vp.height / dpr();
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    overlay.width = Math.round(vp.width);
+    overlay.height = Math.round(vp.height);
+    overlay.style.width = cssW + 'px';
+    overlay.style.height = cssH + 'px';
+    // intent:'print' — display intent paces itself with requestAnimationFrame,
+    // which stalls forever in throttled or backgrounded tabs; print intent doesn't.
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, intent: 'print' }).promise;
+    $('sheet').style.display = 'block';
+    $('empty').style.display = 'none';
+    drawOverlay();
+    const wIn = base.width / 72, hIn = base.height / 72;
+    const modeTxt = mode === 'fit' ? 'fit width — NOT to scale'
+                  : mode === '2' ? '2:1 — on-screen is twice real size'
+                  : '1:1 true scale';
+    $('status').innerHTML =
+      `Page <b>${pageNo}</b> · sheet <b>${wIn.toFixed(2)}&Prime; &times; ${hIn.toFixed(2)}&Prime;</b> ` +
+      `(${(wIn*25.4).toFixed(0)} &times; ${(hIn*25.4).toFixed(0)} mm) · <b>${modeTxt}</b> · screen ${physPPI.toFixed(1)} PPI` +
+      (localStorage.getItem(LS_PPI) ? '' : ' · <b style="color:var(--danger)">not calibrated yet</b>');
+    localStorage.setItem(LS_PAGE_PREFIX + docKey, String(pageNo));
+  } catch (e) {
+    $('status').innerHTML = '<b style="color:var(--danger)">Render failed:</b> ' + e.message;
+  } finally {
+    rendering = false;
+    if (renderQueued) { renderQueued = false; render(); }
+  }
+}
+
+function setPage(n) {
+  if (!pdfDoc) return;
+  pageNo = Math.min(Math.max(1, n), pdfDoc.numPages);
+  $('pageNum').value = pageNo;
+  measurePts = [];
+  render();
+}
+
+// ---------- file loading ----------
+async function loadPdf(data, name) {
+  try {
+    pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+  } catch (e) {
+    alert('Could not open PDF: ' + e.message);
+    return;
+  }
+  docKey = name + ':' + pdfDoc.numPages;
+  $('pageCount').textContent = '/ ' + pdfDoc.numPages;
+  $('pageNum').max = pdfDoc.numPages;
+  for (const id of ['prevBtn', 'nextBtn', 'pageNum', 'modeSel', 'measureBtn']) $(id).disabled = false;
+  const saved = parseInt(localStorage.getItem(LS_PAGE_PREFIX + docKey), 10);
+  setPage(saved || 1);
+  requestWakeLock();
+  if (!localStorage.getItem(LS_PPI)) openCal();
+}
+
+$('openBtn').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (f) loadPdf(await f.arrayBuffer(), f.name);
+});
+
+// ---------- navigation ----------
+$('prevBtn').addEventListener('click', () => setPage(pageNo - 1));
+$('nextBtn').addEventListener('click', () => setPage(pageNo + 1));
+$('pageNum').addEventListener('change', e => setPage(parseInt(e.target.value, 10) || 1));
+$('modeSel').addEventListener('change', e => { mode = e.target.value; render(); });
+
+// ---------- measure tool ----------
+$('measureBtn').addEventListener('click', () => {
+  measuring = !measuring;
+  measurePts = [];
+  $('measureBtn').classList.toggle('toggled', measuring);
+  $('sheet').classList.toggle('measuring', measuring);
+  drawOverlay();
+  if (measuring) $('status').innerHTML = 'Measure: tap two points on the drawing — distance shows in real drawing units.';
+});
+
+$('overlayCanvas').addEventListener('click', e => {
+  if (!measuring) return;
+  const r = $('overlayCanvas').getBoundingClientRect();
+  const p = { x: e.clientX - r.left, y: e.clientY - r.top };
+  if (measurePts.length >= 2) measurePts = [];
+  measurePts.push(p);
+  drawOverlay();
+  if (measurePts.length === 2) {
+    const dx = measurePts[1].x - measurePts[0].x, dy = measurePts[1].y - measurePts[0].y;
+    const pts = Math.hypot(dx, dy) / cssPerPoint;   // PDF points
+    const inch = pts / 72, mm = inch * 25.4;
+    $('status').innerHTML = `Measured: <b>${inch.toFixed(3)}&Prime;</b> = <b>${mm.toFixed(1)} mm</b> (independent of screen calibration)`;
+  }
+});
+
+function drawOverlay() {
+  const o = $('overlayCanvas'), ctx = o.getContext('2d');
+  ctx.clearRect(0, 0, o.width, o.height);
+  if (!measurePts.length) return;
+  ctx.save();
+  ctx.scale(dpr(), dpr());
+  ctx.strokeStyle = '#e8455a';
+  ctx.fillStyle = '#e8455a';
+  ctx.lineWidth = 1.5;
+  for (const p of measurePts) {
+    ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(p.x - 10, p.y); ctx.lineTo(p.x + 10, p.y);
+    ctx.moveTo(p.x, p.y - 10); ctx.lineTo(p.x, p.y + 10); ctx.stroke();
+  }
+  if (measurePts.length === 2) {
+    ctx.beginPath();
+    ctx.moveTo(measurePts[0].x, measurePts[0].y);
+    ctx.lineTo(measurePts[1].x, measurePts[1].y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---------- calibration ----------
+const MM_PER_IN = 25.4;
+function calRefresh() {
+  const cssPPI = physPPI / dpr();
+  $('ppiVal').textContent = physPPI.toFixed(1) + ' PPI';
+  $('ppiSlider').value = physPPI;
+  $('bar100').style.width = (100 / MM_PER_IN * cssPPI) + 'px';
+  $('card').style.width = (85.60 / MM_PER_IN * cssPPI) + 'px';
+  $('card').style.height = (53.98 / MM_PER_IN * cssPPI) + 'px';
+}
+function setPPI(v) {
+  physPPI = Math.min(450, Math.max(150, v));
+  calRefresh();
+}
+function openCal() { $('calModal').classList.add('open'); calRefresh(); }
+$('calBtn').addEventListener('click', openCal);
+$('ppiSlider').addEventListener('input', e => setPPI(parseFloat(e.target.value)));
+$('ppiMinus').addEventListener('click', () => setPPI(physPPI - 0.5));
+$('ppiPlus').addEventListener('click', () => setPPI(physPPI + 0.5));
+$('presetPixelTab').addEventListener('click', () => setPPI(PIXEL_TABLET_PPI));
+$('presetReset').addEventListener('click', () => setPPI(defaultPPI()));
+$('calDone').addEventListener('click', () => {
+  localStorage.setItem(LS_PPI, String(physPPI));
+  $('calModal').classList.remove('open');
+  render();
+});
+
+// ---------- fullscreen & wake lock ----------
+$('fsBtn').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => {});
+});
+let wakeLock = null;
+async function requestWakeLock() {
+  try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && pdfDoc) requestWakeLock();
+});
+
+// re-render on rotation / resize when in fit mode
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (mode === 'fit') render(); }, 250);
+});
+
+// ---------- dev hook: ?dev=1 auto-loads sample.pdf served next to the app ----------
+if (new URLSearchParams(location.search).has('dev')) {
+  fetch('sample.pdf')
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .then(buf => loadPdf(buf, 'sample.pdf'))
+    .catch(() => {});
+}
+
+// ---------- service worker ----------
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

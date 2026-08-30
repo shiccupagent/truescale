@@ -1,0 +1,13 @@
+{
+  "name": "TrueScale PDF",
+  "short_name": "TrueScale",
+  "description": "View PDF drawings at true 1:1 physical scale for measuring with a real ruler.",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#101418",
+  "theme_color": "#101418",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
