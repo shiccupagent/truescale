@@ -1,7 +1,9 @@
 // TrueScale PDF — offline cache. Bump VERSION on any app change.
-const VERSION = 'truescale-v5';
+// './' is deliberately NOT in SHELL: when the app is mounted under a path
+// that has no directory index (e.g. shiccup.com/truescale/), precaching it
+// would 404 and fail the whole install. './index.html' covers every entry.
+const VERSION = 'truescale-v6';
 const SHELL = [
-  './',
   './index.html',
   './vendor/pdf.min.js',
   './vendor/pdf.worker.min.js',
