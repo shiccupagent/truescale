@@ -3,3 +3,5 @@ sample.pdf
 node_modules/
 .vercel
 graphify-out/
+.env*
+dist
