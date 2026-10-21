@@ -201,6 +201,11 @@
   .libOpen.current { border-color: var(--accent); }
   .libDel { flex: none; }
 </style>
+<!-- Vercel Web Analytics. Root-absolute on purpose: at shiccup.com/truescale
+     this loads the hub's script, so visits count in the hub's analytics under
+     /truescale; on truescale-seven.vercel.app it counts in this project. -->
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+<script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
 

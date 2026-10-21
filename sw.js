@@ -2,7 +2,7 @@
 // './' is deliberately NOT in SHELL: when the app is mounted under a path
 // that has no directory index (e.g. shiccup.com/truescale/), precaching it
 // would 404 and fail the whole install. './index.html' covers every entry.
-const VERSION = 'truescale-v6';
+const VERSION = 'truescale-v7';
 const SHELL = [
   './index.html',
   './vendor/pdf.min.js',
