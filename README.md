@@ -4,11 +4,10 @@ A tiny offline-capable web app (PWA) that renders PDF pages at **true 1:1
 physical scale**, so you can hold a real ruler against a tablet screen and
 measure features on engineering drawings — plus on-screen machinist tools.
 
-**Live:** https://truescale-seven.vercel.app (canonical:
-https://truescale.shiccup.com once the Cloudflare CNAME
-`truescale → cname.vercel-dns.com`, DNS-only/grey cloud, is added — same
-pattern as studio.shiccup.com; the domain is already attached to the Vercel
-project).
+**Live:** https://shiccup.com/truescale (the shiccup.com hub proxies that path
+to this project's deployment, https://truescale-seven.vercel.app). There is no
+truescale.shiccup.com subdomain: it was never given DNS and was removed from the
+Vercel project on 2026-10-20.
 
 ## How it works
 
