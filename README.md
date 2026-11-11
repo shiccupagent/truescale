@@ -4,10 +4,12 @@ A tiny offline-capable web app (PWA) that renders PDF pages at **true 1:1
 physical scale**, so you can hold a real ruler against a tablet screen and
 measure features on engineering drawings — plus on-screen machinist tools.
 
-**Live:** https://shiccup.com/truescale (the shiccup.com hub proxies that path
-to this project's deployment, https://truescale-seven.vercel.app). There is no
-truescale.shiccup.com subdomain: it was never given DNS and was removed from the
-Vercel project on 2026-10-20.
+**Live:** https://shiccup.com/truescale. Since 2026-11-10 the shiccup.com hub
+serves a copy of this repo's files itself, from `public/truescale/`: run
+`npm run sync:tools` in the hub after a change here (it copies `git archive
+HEAD`, so commit first). The old Vercel project (truescale-seven.vercel.app)
+was deleted when shiccup.com moved to the closet Mac. Bump `VERSION` in sw.js
+on any app change so installed copies pick it up.
 
 ## How it works
 
